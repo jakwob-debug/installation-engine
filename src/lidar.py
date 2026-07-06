@@ -12,16 +12,20 @@ from src.config import (
     MIN_DISTANCE_MM,
     MIN_QUALITY,
 )
+from src.models import Point
 
 
 class LidarReader:
-    def __init__(self):
+    def __init__(self, status):
+        self.status = status
         self.running = True
         self.points = deque(maxlen=MAX_POINTS)
         self.lidar = RPLidar(PORT_NAME, baudrate=BAUDRATE)
 
     async def run(self):
         print("Starting lidar scan...")
+        self.status.lidar_running = True
+
         scan_task = asyncio.create_task(self.lidar.simple_scan())
 
         try:
@@ -45,10 +49,21 @@ class LidarReader:
                 x = distance * math.cos(radians)
                 y = distance * math.sin(radians)
 
-                self.points.append((x, y))
+                self.points.append(
+                    Point(
+                        x=x,
+                        y=y,
+                        angle=angle,
+                        distance=distance,
+                        quality=quality,
+                    )
+                )
+
+                self.status.tick_scan()
 
         finally:
             print("Stopping lidar scan...")
+            self.status.lidar_running = False
 
             try:
                 self.lidar.stop_event.set()
@@ -65,6 +80,7 @@ class LidarReader:
 
     def stop(self):
         self.running = False
+        self.status.lidar_running = False
 
     def shutdown(self):
         print("Sending lidar shutdown/reset...")

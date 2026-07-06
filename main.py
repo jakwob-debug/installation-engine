@@ -2,13 +2,15 @@ import asyncio
 import signal
 
 from src.lidar import LidarReader
+from src.status import Status
 from src.viewer import Viewer
 
 
 class InstallationApp:
     def __init__(self):
-        self.lidar = LidarReader()
-        self.viewer = Viewer(self.lidar)
+        self.status = Status()
+        self.lidar = LidarReader(status=self.status)
+        self.viewer = Viewer(self.lidar, self.status)
 
     async def run(self):
         lidar_task = asyncio.create_task(self.lidar.run())
@@ -18,6 +20,7 @@ class InstallationApp:
 
     def stop(self):
         print("Stopping app...")
+        self.status.app_running = False
         self.viewer.stop()
         self.lidar.stop()
 
