@@ -1,9 +1,11 @@
 import asyncio
 import math
+import time
 from collections import deque
 
 from rplidarc1 import RPLidar
 
+from src.background import BackgroundModel
 from src.config import (
     PORT_NAME,
     BAUDRATE,
@@ -21,6 +23,7 @@ class LidarReader:
         self.running = True
         self.points = deque(maxlen=MAX_POINTS)
         self.lidar = RPLidar(PORT_NAME, baudrate=BAUDRATE)
+        self.background = BackgroundModel(learning_seconds=10.0)
 
     async def run(self):
         print("Starting lidar scan...")
@@ -49,15 +52,24 @@ class LidarReader:
                 x = distance * math.cos(radians)
                 y = distance * math.sin(radians)
 
-                self.points.append(
-                    Point(
-                        x=x,
-                        y=y,
-                        angle=angle,
-                        distance=distance,
-                        quality=quality,
-                    )
+                lidar_point = Point(
+                    x=x,
+                    y=y,
+                    angle=angle,
+                    distance=distance,
+                    quality=quality,
                 )
+
+                self.points.append(lidar_point)
+
+                now = time.time()
+                self.background.process_point(lidar_point, now)
+
+                if self.background.is_learning:
+                    progress = self.background.progress(now) * 100
+                    self.status.background_state = f"Learning {progress:.0f}%"
+                elif self.background.is_ready:
+                    self.status.background_state = "Learned ✓"
 
                 self.status.tick_scan()
 
