@@ -1,4 +1,4 @@
-PORT_NAME = "/dev/cu.usbserial-110"
+PORT_NAME = "/dev/cu.usbserial-10"
 BAUDRATE = 460800
 
 MAX_POINTS = 1500
