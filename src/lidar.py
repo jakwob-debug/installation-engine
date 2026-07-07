@@ -21,9 +21,19 @@ class LidarReader:
     def __init__(self, status):
         self.status = status
         self.running = True
+
+        # This is the only buffer the viewer draws.
         self.points = deque(maxlen=MAX_POINTS)
+
         self.lidar = RPLidar(PORT_NAME, baudrate=BAUDRATE)
-        self.background = BackgroundModel(learning_seconds=10.0)
+        self.background = BackgroundModel(
+            learning_seconds=10.0,
+            angle_bin_size=5,
+            threshold_mm=300,
+        )
+
+        self.display_cleared_after_learning = False
+        self.foreground_count = 0
 
     async def run(self):
         print("Starting lidar scan...")
@@ -33,18 +43,16 @@ class LidarReader:
 
         try:
             while self.running:
-                point = await self.lidar.output_queue.get()
+                raw_point = await self.lidar.output_queue.get()
 
-                angle = point["a_deg"]
-                distance = point["d_mm"]
-                quality = point["q"]
+                angle = raw_point["a_deg"]
+                distance = raw_point["d_mm"]
+                quality = raw_point["q"]
 
                 if distance is None:
                     continue
-
                 if quality < MIN_QUALITY:
                     continue
-
                 if distance < MIN_DISTANCE_MM or distance > MAX_DISTANCE_MM:
                     continue
 
@@ -60,16 +68,25 @@ class LidarReader:
                     quality=quality,
                 )
 
-                self.points.append(lidar_point)
-
                 now = time.time()
-                self.background.process_point(lidar_point, now)
+                foreground_point = self.background.process_point(lidar_point, now)
 
                 if self.background.is_learning:
+                    self.points.append(lidar_point)
                     progress = self.background.progress(now) * 100
                     self.status.background_state = f"Learning {progress:.0f}%"
+
                 elif self.background.is_ready:
-                    self.status.background_state = "Learned ✓"
+                    if not self.display_cleared_after_learning:
+                        self.points.clear()
+                        self.display_cleared_after_learning = True
+                        print("Background learned. Display cleared.")
+
+                    self.status.background_state = f"Learned ✓ | FG: {self.foreground_count}"
+
+                    if foreground_point is not None:
+                        self.points.append(foreground_point)
+                        self.foreground_count += 1
 
                 self.status.tick_scan()
 

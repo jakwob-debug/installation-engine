@@ -52,6 +52,8 @@ class Viewer:
 
             if arr.ndim == 2 and arr.shape[1] == 2:
                 self.scatter.setData(arr[:, 0], arr[:, 1])
+        else:
+            self.scatter.setData([], [])
 
         self.status_label.setText(
             f"""
