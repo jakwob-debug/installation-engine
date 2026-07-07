@@ -23,7 +23,8 @@ class LidarReader:
         self.running = True
 
         self.points = deque(maxlen=MAX_POINTS)
-        self.current_scan = []
+        self.measurement_scan = []
+        self.display_scan = []
         self.last_angle = None
 
         self.lidar = RPLidar(PORT_NAME, baudrate=BAUDRATE)
@@ -70,21 +71,27 @@ class LidarReader:
                 foreground_point = self.background.process_point(lidar_point, now)
 
                 if self.background.is_learning:
-                    self.current_scan.append(lidar_point)
+                    self.measurement_scan.append(lidar_point)
+                    self.display_scan.append(lidar_point)
+
                     progress = self.background.progress(now) * 100
                     self.status.background_state = f"Learning {progress:.0f}%"
 
                 elif self.background.is_ready:
+                    self.measurement_scan.append(lidar_point)
                     self.status.background_state = "Learned ✓"
 
                     if foreground_point is not None:
-                        self.current_scan.append(foreground_point)
+                        self.display_scan.append(foreground_point)
 
-                # New revolution: replace display with this scan only
                 if self.last_angle is not None and self.last_angle > 330 and angle < 30:
+                    self.update_pillar_values()
+
                     self.points.clear()
-                    self.points.extend(self.current_scan)
-                    self.current_scan = []
+                    self.points.extend(self.display_scan)
+
+                    self.measurement_scan = []
+                    self.display_scan = []
                     self.status.tick_scan()
 
                 self.last_angle = angle
@@ -105,6 +112,35 @@ class LidarReader:
                 pass
 
             self.shutdown()
+
+    def update_pillar_values(self):
+        if not self.measurement_scan:
+            self.status.pillar_presence = 0.0
+            self.status.pillar_distance_mm = 0.0
+            self.status.pillar_activity = 0.0
+            return
+
+        distances = [p.distance for p in self.measurement_scan if p.distance is not None]
+
+        if not distances:
+            self.status.pillar_presence = 0.0
+            self.status.pillar_distance_mm = 0.0
+            self.status.pillar_activity = 0.0
+            return
+
+        nearest = min(distances)
+
+        min_distance = 300
+        max_distance = 2500
+
+        presence = 1.0 - ((nearest - min_distance) / (max_distance - min_distance))
+        presence = max(0.0, min(1.0, presence))
+
+        activity = min(len(distances) / 250.0, 1.0)
+
+        self.status.pillar_presence = presence
+        self.status.pillar_distance_mm = nearest
+        self.status.pillar_activity = activity
 
     def stop(self):
         self.running = False
