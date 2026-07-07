@@ -22,18 +22,16 @@ class LidarReader:
         self.status = status
         self.running = True
 
-        # This is the only buffer the viewer draws.
         self.points = deque(maxlen=MAX_POINTS)
+        self.current_scan = []
+        self.last_angle = None
 
         self.lidar = RPLidar(PORT_NAME, baudrate=BAUDRATE)
         self.background = BackgroundModel(
             learning_seconds=10.0,
             angle_bin_size=5,
-            threshold_mm=300,
+            threshold_mm=1200,
         )
-
-        self.display_cleared_after_learning = False
-        self.foreground_count = 0
 
     async def run(self):
         print("Starting lidar scan...")
@@ -72,23 +70,24 @@ class LidarReader:
                 foreground_point = self.background.process_point(lidar_point, now)
 
                 if self.background.is_learning:
-                    self.points.append(lidar_point)
+                    self.current_scan.append(lidar_point)
                     progress = self.background.progress(now) * 100
                     self.status.background_state = f"Learning {progress:.0f}%"
 
                 elif self.background.is_ready:
-                    if not self.display_cleared_after_learning:
-                        self.points.clear()
-                        self.display_cleared_after_learning = True
-                        print("Background learned. Display cleared.")
-
-                    self.status.background_state = f"Learned ✓ | FG: {self.foreground_count}"
+                    self.status.background_state = "Learned ✓"
 
                     if foreground_point is not None:
-                        self.points.append(foreground_point)
-                        self.foreground_count += 1
+                        self.current_scan.append(foreground_point)
 
-                self.status.tick_scan()
+                # New revolution: replace display with this scan only
+                if self.last_angle is not None and self.last_angle > 330 and angle < 30:
+                    self.points.clear()
+                    self.points.extend(self.current_scan)
+                    self.current_scan = []
+                    self.status.tick_scan()
+
+                self.last_angle = angle
 
         finally:
             print("Stopping lidar scan...")
