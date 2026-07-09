@@ -13,6 +13,8 @@ from src.config import (
     MIN_QUALITY,
     ACTIVATION_MIN_DISTANCE_MM,
     ACTIVATION_MAX_DISTANCE_MM,
+    MOVEMENT_THRESHOLD_MM,
+    MOVEMENT_ANGLE_BIN_SIZE,
 )
 from src.models import Point
 
@@ -24,8 +26,12 @@ class LidarReader:
         self.osc = osc
 
         self.points = deque(maxlen=MAX_POINTS)
+        self.moving_points = deque(maxlen=MAX_POINTS)
+
         self.measurement_scan = []
         self.display_scan = []
+        self.previous_scan_by_bin = {}
+
         self.last_angle = None
 
         self.smoothed_presence = 0.0
@@ -69,15 +75,12 @@ class LidarReader:
                     quality=quality,
                 )
 
-                # No background learning.
-                # Every valid point is shown and used for pillar distance.
                 self.measurement_scan.append(lidar_point)
                 self.display_scan.append(lidar_point)
-                self.status.background_state = "Off"
 
-                # One full scan has completed when angle wraps back around.
                 if self.last_angle is not None and self.last_angle > 330 and angle < 30:
                     self.update_pillar_values()
+                    self.update_movement_points()
 
                     self.points.clear()
                     self.points.extend(self.display_scan)
@@ -104,6 +107,28 @@ class LidarReader:
                 pass
 
             self.shutdown()
+
+    def update_movement_points(self):
+        current_scan_by_bin = {}
+        moving = []
+
+        for point in self.display_scan:
+            angle_bin = int(point.angle // MOVEMENT_ANGLE_BIN_SIZE)
+
+            previous_distance = self.previous_scan_by_bin.get(angle_bin)
+
+            if previous_distance is not None:
+                distance_change = abs(point.distance - previous_distance)
+
+                if distance_change > MOVEMENT_THRESHOLD_MM:
+                    moving.append(point)
+
+            current_scan_by_bin[angle_bin] = point.distance
+
+        self.previous_scan_by_bin = current_scan_by_bin
+
+        self.moving_points.clear()
+        self.moving_points.extend(moving)
 
     def update_pillar_values(self):
         if not self.measurement_scan:

@@ -38,13 +38,21 @@ class Viewer:
             pen=pg.mkPen(width=2),
         )
 
-        # LiDAR points
+        # Normal LiDAR points
         self.scatter = pg.ScatterPlotItem(
             size=4,
             pen=None,
             brush="w",
         )
         self.plot.addItem(self.scatter)
+
+        # Moving LiDAR points
+        self.moving_scatter = pg.ScatterPlotItem(
+            size=7,
+            pen=None,
+            brush="y",
+        )
+        self.plot.addItem(self.moving_scatter)
 
         # Centre point / pillar position
         self.origin = pg.ScatterPlotItem(
@@ -78,6 +86,7 @@ class Viewer:
     def update_display(self):
         self.draw_activation_circle()
 
+        # Normal scan points
         points = self.lidar_reader.points
         self.status.point_count = len(points)
         self.status.tick_display()
@@ -86,9 +95,29 @@ class Viewer:
             arr = np.array([(p.x, p.y) for p in points], dtype=float)
 
             if arr.ndim == 2 and arr.shape[1] == 2:
-                self.scatter.setData(arr[:, 0], arr[:, 1])
+                # X-axis inverted for display
+                self.scatter.setData(-arr[:, 0], arr[:, 1])
+            else:
+                self.scatter.setData([], [])
         else:
             self.scatter.setData([], [])
+
+        # Moving scan points
+        moving_points = self.lidar_reader.moving_points
+
+        if moving_points:
+            moving_arr = np.array(
+                [(p.x, p.y) for p in moving_points],
+                dtype=float,
+            )
+
+            if moving_arr.ndim == 2 and moving_arr.shape[1] == 2:
+                # X-axis inverted for display
+                self.moving_scatter.setData(-moving_arr[:, 0], moving_arr[:, 1])
+            else:
+                self.moving_scatter.setData([], [])
+        else:
+            self.moving_scatter.setData([], [])
 
         self.status_label.setText(
             f"""
@@ -109,6 +138,7 @@ class Viewer:
             Activity: {self.status.pillar_activity:.2f}<br><br>
 
             Activation Zone: {ACTIVATION_MAX_DISTANCE_MM:.0f} mm<br>
+            Moving Points: {len(moving_points)}<br>
             OSC: {self.status.osc_state}<br>
             </div>
             """
