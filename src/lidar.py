@@ -1,11 +1,9 @@
 import asyncio
 import math
-import time
 from collections import deque
 
 from rplidarc1 import RPLidar
 
-from src.background import BackgroundModel
 from src.config import (
     PORT_NAME,
     BAUDRATE,
@@ -13,6 +11,8 @@ from src.config import (
     MAX_DISTANCE_MM,
     MIN_DISTANCE_MM,
     MIN_QUALITY,
+    ACTIVATION_MIN_DISTANCE_MM,
+    ACTIVATION_MAX_DISTANCE_MM,
 )
 from src.models import Point
 
@@ -22,25 +22,23 @@ class LidarReader:
         self.status = status
         self.running = True
         self.osc = osc
+
         self.points = deque(maxlen=MAX_POINTS)
         self.measurement_scan = []
         self.display_scan = []
         self.last_angle = None
+
         self.smoothed_presence = 0.0
         self.smoothed_activity = 0.0
         self.smoothed_distance_mm = 0.0
         self.smoothing_amount = 0.15
 
         self.lidar = RPLidar(PORT_NAME, baudrate=BAUDRATE)
-        self.background = BackgroundModel(
-            learning_seconds=10.0,
-            angle_bin_size=5,
-            threshold_mm=1200,
-        )
 
     async def run(self):
         print("Starting lidar scan...")
         self.status.lidar_running = True
+        self.status.background_state = "Off"
 
         scan_task = asyncio.create_task(self.lidar.simple_scan())
 
@@ -71,23 +69,13 @@ class LidarReader:
                     quality=quality,
                 )
 
-                now = time.time()
-                foreground_point = self.background.process_point(lidar_point, now)
+                # No background learning.
+                # Every valid point is shown and used for pillar distance.
+                self.measurement_scan.append(lidar_point)
+                self.display_scan.append(lidar_point)
+                self.status.background_state = "Off"
 
-                if self.background.is_learning:
-                    self.measurement_scan.append(lidar_point)
-                    self.display_scan.append(lidar_point)
-
-                    progress = self.background.progress(now) * 100
-                    self.status.background_state = f"Learning {progress:.0f}%"
-
-                elif self.background.is_ready:
-                    self.measurement_scan.append(lidar_point)
-                    self.status.background_state = "Learned ✓"
-
-                    if foreground_point is not None:
-                        self.display_scan.append(foreground_point)
-
+                # One full scan has completed when angle wraps back around.
                 if self.last_angle is not None and self.last_angle > 330 and angle < 30:
                     self.update_pillar_values()
 
@@ -124,7 +112,11 @@ class LidarReader:
             self.status.pillar_activity = 0.0
             return
 
-        distances = [p.distance for p in self.measurement_scan if p.distance is not None]
+        distances = [
+            p.distance
+            for p in self.measurement_scan
+            if p.distance is not None
+        ]
 
         if not distances:
             self.status.pillar_presence = 0.0
@@ -134,8 +126,8 @@ class LidarReader:
 
         nearest = min(distances)
 
-        min_distance = 300
-        max_distance = 2500
+        min_distance = ACTIVATION_MIN_DISTANCE_MM
+        max_distance = ACTIVATION_MAX_DISTANCE_MM
 
         presence = 1.0 - ((nearest - min_distance) / (max_distance - min_distance))
         presence = max(0.0, min(1.0, presence))
@@ -165,11 +157,12 @@ class LidarReader:
         self.status.pillar_presence = self.smoothed_presence
         self.status.pillar_distance_mm = self.smoothed_distance_mm
         self.status.pillar_activity = self.smoothed_activity
+
         self.osc.send_pillar(
-        self.status.pillar_presence,
-           self.status.pillar_distance_mm,
-         self.status.pillar_activity,
-)
+            self.status.pillar_presence,
+            self.status.pillar_distance_mm,
+            self.status.pillar_activity,
+        )
 
     def stop(self):
         self.running = False
