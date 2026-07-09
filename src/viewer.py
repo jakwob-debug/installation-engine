@@ -4,7 +4,11 @@ import numpy as np
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtWidgets, QtCore
 
-from src.config import MAX_DISTANCE_MM, DISPLAY_UPDATE_MS
+from src.config import (
+    MAX_DISTANCE_MM,
+    DISPLAY_UPDATE_MS,
+    ACTIVATION_MAX_DISTANCE_MM,
+)
 
 
 class Viewer:
@@ -17,7 +21,7 @@ class Viewer:
 
         self.window = pg.GraphicsLayoutWidget(
             show=True,
-            title="RPLIDAR C1 Installation Viewer"
+            title="RPLIDAR C1 Installation Viewer",
         )
         self.window.resize(1100, 900)
 
@@ -27,12 +31,31 @@ class Viewer:
         self.plot.setXRange(-MAX_DISTANCE_MM, MAX_DISTANCE_MM)
         self.plot.setYRange(-MAX_DISTANCE_MM, MAX_DISTANCE_MM)
 
-        self.scatter = pg.ScatterPlotItem(size=4, pen=None, brush="w")
+        # Activation zone circle
+        self.activation_circle = self.plot.plot(
+            [],
+            [],
+            pen=pg.mkPen(width=2),
+        )
+
+        # LiDAR points
+        self.scatter = pg.ScatterPlotItem(
+            size=4,
+            pen=None,
+            brush="w",
+        )
         self.plot.addItem(self.scatter)
 
-        self.origin = pg.ScatterPlotItem(x=[0], y=[0], size=14, brush="r")
+        # Centre point / pillar position
+        self.origin = pg.ScatterPlotItem(
+            x=[0],
+            y=[0],
+            size=14,
+            brush="r",
+        )
         self.plot.addItem(self.origin)
 
+        # Status text
         self.status_label = pg.LabelItem(justify="left")
         self.window.addItem(self.status_label, row=0, col=1)
 
@@ -42,7 +65,19 @@ class Viewer:
 
         self.window.closeEvent = self.close_event
 
+    def draw_activation_circle(self):
+        angles = np.linspace(0, 2 * np.pi, 200)
+
+        radius = ACTIVATION_MAX_DISTANCE_MM
+
+        x = radius * np.cos(angles)
+        y = radius * np.sin(angles)
+
+        self.activation_circle.setData(x, y)
+
     def update_display(self):
+        self.draw_activation_circle()
+
         points = self.lidar_reader.points
         self.status.point_count = len(points)
         self.status.tick_display()
@@ -66,10 +101,14 @@ class Viewer:
 
             Lidar: {"Running" if self.status.lidar_running else "Stopped"}<br>
             Background: {self.status.background_state}<br>
-            People: {self.status.people_count}<br>
-            Pillar Presence: {self.status.pillar_presence:.2f}<br>
-Pillar Distance: {self.status.pillar_distance_mm:.0f} mm<br>
-Pillar Activity: {self.status.pillar_activity:.2f}<br>
+            People: {self.status.people_count}<br><br>
+
+            <b>Pillar</b><br>
+            Presence: {self.status.pillar_presence:.2f}<br>
+            Distance: {self.status.pillar_distance_mm:.0f} mm<br>
+            Activity: {self.status.pillar_activity:.2f}<br><br>
+
+            Activation Zone: {ACTIVATION_MAX_DISTANCE_MM:.0f} mm<br>
             OSC: {self.status.osc_state}<br>
             </div>
             """
