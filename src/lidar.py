@@ -18,14 +18,18 @@ from src.models import Point
 
 
 class LidarReader:
-    def __init__(self, status):
+    def __init__(self, status, osc):
         self.status = status
         self.running = True
-
+        self.osc = osc
         self.points = deque(maxlen=MAX_POINTS)
         self.measurement_scan = []
         self.display_scan = []
         self.last_angle = None
+        self.smoothed_presence = 0.0
+        self.smoothed_activity = 0.0
+        self.smoothed_distance_mm = 0.0
+        self.smoothing_amount = 0.15
 
         self.lidar = RPLidar(PORT_NAME, baudrate=BAUDRATE)
         self.background = BackgroundModel(
@@ -138,9 +142,34 @@ class LidarReader:
 
         activity = min(len(distances) / 250.0, 1.0)
 
-        self.status.pillar_presence = presence
-        self.status.pillar_distance_mm = nearest
-        self.status.pillar_activity = activity
+        alpha = self.smoothing_amount
+
+        self.smoothed_presence = (
+            alpha * presence
+            + (1.0 - alpha) * self.smoothed_presence
+        )
+
+        self.smoothed_activity = (
+            alpha * activity
+            + (1.0 - alpha) * self.smoothed_activity
+        )
+
+        if self.smoothed_distance_mm == 0:
+            self.smoothed_distance_mm = nearest
+        else:
+            self.smoothed_distance_mm = (
+                alpha * nearest
+                + (1.0 - alpha) * self.smoothed_distance_mm
+            )
+
+        self.status.pillar_presence = self.smoothed_presence
+        self.status.pillar_distance_mm = self.smoothed_distance_mm
+        self.status.pillar_activity = self.smoothed_activity
+        self.osc.send_pillar(
+        self.status.pillar_presence,
+           self.status.pillar_distance_mm,
+         self.status.pillar_activity,
+)
 
     def stop(self):
         self.running = False

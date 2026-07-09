@@ -67,6 +67,9 @@ class Viewer:
             Lidar: {"Running" if self.status.lidar_running else "Stopped"}<br>
             Background: {self.status.background_state}<br>
             People: {self.status.people_count}<br>
+            Pillar Presence: {self.status.pillar_presence:.2f}<br>
+Pillar Distance: {self.status.pillar_distance_mm:.0f} mm<br>
+Pillar Activity: {self.status.pillar_activity:.2f}<br>
             OSC: {self.status.osc_state}<br>
             </div>
             """

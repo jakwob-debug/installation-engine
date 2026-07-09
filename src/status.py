@@ -15,6 +15,10 @@ class Status:
     people_count: int = 0
     osc_state: str = "Off"
 
+    pillar_presence: float = 0.0
+    pillar_distance_mm: float = 0.0
+    pillar_activity: float = 0.0
+
     _last_display_time: float = field(default_factory=time.time)
     _display_frames: int = 0
 

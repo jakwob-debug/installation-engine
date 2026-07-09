@@ -2,6 +2,7 @@ import asyncio
 import signal
 
 from src.lidar import LidarReader
+from src.osc_sender import OSCSender
 from src.status import Status
 from src.viewer import Viewer
 
@@ -9,7 +10,11 @@ from src.viewer import Viewer
 class InstallationApp:
     def __init__(self):
         self.status = Status()
-        self.lidar = LidarReader(status=self.status)
+        self.osc = OSCSender()
+        self.lidar = LidarReader(
+            status=self.status,
+            osc=self.osc,
+        )
         self.viewer = Viewer(self.lidar, self.status)
 
     async def run(self):
